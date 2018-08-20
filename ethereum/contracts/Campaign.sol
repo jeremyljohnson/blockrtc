@@ -134,7 +134,9 @@ contract MeetingContract {
     Client[] clients;
     Server[] servers;
 
-    // createMeeting
+    // offerMeeting
+    // requestMeeting
+    // acceptMeeting
     // startMeeting
     // stopMeeting
     // pauseMeeting
