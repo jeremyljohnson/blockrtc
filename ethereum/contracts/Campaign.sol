@@ -118,11 +118,10 @@ contract MeetingContract {
     }
 
     struct Server {
-        address recipient;
-        uint maxConnections;    // rough estimate of maximum number of meeting connections a server can provide
-        bool available;         // probably just calculate this if active meetings.maxParticipants < maxConnections
+        address recipient;      // address of the server, where funds will be sent for successful meeting
         string url;             // url where meetings will he held - could be ip address and port
         uint8[] ports;          // possibly just port range
+        // bool available;         // probably just calculate this if active meetings.maxParticipants < maxConnections
     }
 
     struct Client {
@@ -130,11 +129,81 @@ contract MeetingContract {
         string name;            // whatever name a client wants to use to display
     }
 
+    struct MeetingOffer {
+        address serverAddress;      // recipient address of the server making this offer
+        uint availableFrom;         // time server is available from
+        uint availableTo;           // time server is available to
+        uint hourlyCost;            // hourly cost a server is willing to accept
+        uint8 maxConnections;       // rough estimate of maximum number of meeting connections a server can provide
+    }
+
     Meeting[] meetings;
     Client[] clients;
     Server[] servers;
+    MeetingOffer[] meetingOffers;
+    mapping(address => bool) public potentialServers;
+    uint16 registrationCost = 10000;
 
-    // createMeeting
+    modifier serverOnly() {
+        require(potentialServers[msg.sender] == true);
+        _;
+    }
+
+    function registerServer(string url, uint8[] ports) public payable {
+        require(msg.value > registrationCost);
+
+        Server memory potentialServer = Server ({
+            recipient: msg.sender,
+            url: url,
+            ports: ports
+        });
+
+        servers.push(potentialServer);
+        potentialServers[msg.sender] = true;
+    }
+
+    function offerMeeting(uint availableFrom, uint availableTo, uint hourlyCost, uint8 maxConnections) public serverOnly {
+        MeetingOffer memory meetingOffer = MeetingOffer ({
+            serverAddress: msg.sender,
+            availableFrom: availableFrom,
+            availableTo: availableTo,
+            hourlyCost: hourlyCost,
+            maxConnections: maxConnections
+        });
+
+        meetingOffers.push(meetingOffer);
+    }
+
+    function getOffersLength() public view returns (uint) {
+        return meetingOffers.length;
+    }
+
+    function checkCriteria (MeetingOffer offer, uint from, uint availableTo, uint maxCost, uint8 maxConnections) private view returns (bool) {
+        if (offer.hourlyCost < maxCost && offer.maxConnections > maxConnections) {
+            if (offer.availableTo > availableTo && offer.availableFrom < from) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function listOffers(uint availableFrom, uint availableTo, uint maxCost, uint8 maxConnections) public view returns (address[]) {
+        // only returns address of servers who have created meeting offers that meet the time, cost and connection requirements
+        address[] memory offerAddresses;
+        uint offerIndex = 0;
+        for (uint i = 0; 1 < meetingOffers.length; i++) {
+            MeetingOffer storage meetingOffer = meetingOffers[i];
+            bool available = checkCriteria(meetingOffer, availableFrom, availableTo, maxCost, maxConnections);
+            if (available) {
+                offerAddresses[offerIndex] = meetingOffer.serverAddress;
+                offerIndex++;
+            }
+        }
+        return offerAddresses;
+    }
+
+    // requestMeeting
+    // acceptMeeting
     // startMeeting
     // stopMeeting
     // pauseMeeting
