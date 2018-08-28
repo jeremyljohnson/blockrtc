@@ -106,8 +106,8 @@ contract MeetingContract {
         string status;                      // current status (pending, active, ended)
         address host;                       // host ether address
         address server;                     // server ether address
-        uint8 quality;                      // 180p, 240p, 360p, 480p, 720p, 960p, 1080p, 2160p
-        uint8 maxParticipants;              // maximum number of participants
+        uint256 quality;                      // 180p, 240p, 360p, 480p, 720p, 960p, 1080p, 2160p
+        uint256 maxParticipants;              // maximum number of participants
         bool successful;                    // did meeting fail or was it successful
         string url;                         // url of the host - could use ENS name service
         bool invitationOnly;                // are only users with ethereum addresses - and were invited - are allowed access
@@ -120,8 +120,12 @@ contract MeetingContract {
     struct Server {
         address recipient;      // address of the server, where funds will be sent for successful meeting
         string url;             // url where meetings will he held - could be ip address and port
+<<<<<<< HEAD
         uint8[] ports;          // possibly just port range
         // bool available;         // probably just calculate this if active meetings.maxParticipants < maxConnections
+=======
+        uint256 port;          // possibly just port range
+>>>>>>> master
     }
 
     struct Client {
@@ -131,10 +135,17 @@ contract MeetingContract {
 
     struct MeetingOffer {
         address serverAddress;      // recipient address of the server making this offer
+<<<<<<< HEAD
         uint availableFrom;         // time server is available from
         uint availableTo;           // time server is available to
         uint hourlyCost;            // hourly cost a server is willing to accept
         uint8 maxConnections;       // rough estimate of maximum number of meeting connections a server can provide
+=======
+        uint256 availableFrom;         // time server is available from
+        uint256 availableTo;           // time server is available to
+        uint256 hourlyCost;            // hourly cost a server is willing to accept
+        uint256 maxConnections;       // rough estimate of maximum number of meeting connections a server can provide
+>>>>>>> master
     }
 
     Meeting[] meetings;
@@ -142,25 +153,38 @@ contract MeetingContract {
     Server[] servers;
     MeetingOffer[] meetingOffers;
     mapping(address => bool) public potentialServers;
+<<<<<<< HEAD
     uint16 registrationCost = 10000;
+=======
+    uint256 registrationCost = 10000;
+>>>>>>> master
 
     modifier serverOnly() {
         require(potentialServers[msg.sender] == true);
         _;
     }
 
+<<<<<<< HEAD
     function registerServer(string url, uint8[] ports) public payable {
+=======
+    function registerServer(string url, uint256 port) public payable {
+>>>>>>> master
         require(msg.value > registrationCost);
 
         Server memory potentialServer = Server ({
             recipient: msg.sender,
             url: url,
+<<<<<<< HEAD
             ports: ports
+=======
+            port: port
+>>>>>>> master
         });
 
         servers.push(potentialServer);
         potentialServers[msg.sender] = true;
     }
+<<<<<<< HEAD
 
     function offerMeeting(uint availableFrom, uint availableTo, uint hourlyCost, uint8 maxConnections) public serverOnly {
         MeetingOffer memory meetingOffer = MeetingOffer ({
@@ -203,6 +227,46 @@ contract MeetingContract {
     }
 
     // requestMeeting
+=======
+
+    function offerMeeting(uint256 availableFrom, uint256 availableTo, uint256 hourlyCost, uint256 maxConnections) public serverOnly {
+        MeetingOffer memory meetingOffer = MeetingOffer ({
+            serverAddress: msg.sender,
+            availableFrom: availableFrom,
+            availableTo: availableTo,
+            hourlyCost: hourlyCost,
+            maxConnections: maxConnections
+        });
+
+        meetingOffers.push(meetingOffer);
+    }
+
+    function getOffersLength() public view returns (uint256) {
+        return meetingOffers.length;
+    }
+
+    function checkCriteria (MeetingOffer offer, uint256 from, uint256 availableTo, uint256 maxCost, uint256 maxConnections) private pure returns (bool) {
+        if (offer.hourlyCost < maxCost && offer.maxConnections > maxConnections) {
+            if (offer.availableTo > availableTo && offer.availableFrom < from) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    function matchOffer(uint256 startTime, uint256 endTime, uint256 maxCost, uint256 maxConnections) public view returns (address) {
+        // only returns first address of a server that has created a meeting offer that fulfills the time, cost and connection requirements
+        for (uint256 i = 0; 1 < meetingOffers.length; i++) {
+            MeetingOffer storage meetingOffer = meetingOffers[i];
+            bool available = checkCriteria(meetingOffer, startTime, endTime, maxCost, maxConnections);
+            if (available) {
+                return meetingOffer.serverAddress;
+                // Note: only returns if a server meets the criteria
+            }
+        }
+    }
+
+>>>>>>> master
     // acceptMeeting
     // startMeeting
     // stopMeeting
@@ -216,6 +280,4 @@ contract MeetingContract {
     // payServer - pay server fee for hosting meeting at end of meeting
     // refundHost - refund if host does not run meeting, or meeting ended < 90% complete
     // split difference between contract and server if meeting takes less than scheduled time 
-    // & is less than 10% of scheduled time - otherwise refund host meeting fee minus cost to schedule / refund
-
-}
+    // is less than 10% of scheduled time - otherwise refund host meeting fee minus cost to schedule
