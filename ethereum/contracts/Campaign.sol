@@ -136,16 +136,19 @@ contract MeetingContract {
         uint256 maxConnections;       // rough estimate of maximum number of meeting connections a server can provide
     }
 
+      struct MeetingRequest{
+        uint256 startTime;
+        uint256 endTime;
+        uint quality;
+        uint participants;
+    }
+
     Meeting[] meetings;
     Client[] clients;
     Server[] servers;
     MeetingOffer[] meetingOffers;
     mapping(address => bool) public potentialServers;
-    uint256 registrationCost = 10000;
-
-    modifier serverOnly() {
         require(potentialServers[msg.sender] == true);
-        _;
     }
 
     function registerServer(string url, uint256 port) public payable {
@@ -198,6 +201,24 @@ contract MeetingContract {
         }
     }
 
+    function RequestMeeting(uint256 startTime, uint256 endTIme, uint256 quality, uint256 participants) internal{
+        MeetingRequest memory request = MeetingRequest ({ 
+            startTime: startTime,
+            endTime: endTime,
+            quality: quality,
+            participants: participants
+        });
+        meetingRequests.push(request);
+        matchOffer; 
+        // this is where the offer would be accepted and commms established between the two participants. 
+        // check if there is an offer meeting that request 
+        //getOffersLength() will return
+        // iterate from 0-length until 
+        //checkCriteria returns true
+    
+
+        }
+       
     // acceptMeeting
     // startMeeting
     // stopMeeting
