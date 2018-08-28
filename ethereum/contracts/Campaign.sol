@@ -120,12 +120,7 @@ contract MeetingContract {
     struct Server {
         address recipient;      // address of the server, where funds will be sent for successful meeting
         string url;             // url where meetings will he held - could be ip address and port
-<<<<<<< HEAD
-        uint8[] ports;          // possibly just port range
-        // bool available;         // probably just calculate this if active meetings.maxParticipants < maxConnections
-=======
         uint256 port;          // possibly just port range
->>>>>>> master
     }
 
     struct Client {
@@ -135,17 +130,17 @@ contract MeetingContract {
 
     struct MeetingOffer {
         address serverAddress;      // recipient address of the server making this offer
-<<<<<<< HEAD
-        uint availableFrom;         // time server is available from
-        uint availableTo;           // time server is available to
-        uint hourlyCost;            // hourly cost a server is willing to accept
-        uint8 maxConnections;       // rough estimate of maximum number of meeting connections a server can provide
-=======
         uint256 availableFrom;         // time server is available from
         uint256 availableTo;           // time server is available to
         uint256 hourlyCost;            // hourly cost a server is willing to accept
         uint256 maxConnections;       // rough estimate of maximum number of meeting connections a server can provide
->>>>>>> master
+    }
+
+      struct MeetingRequest{
+        uint256 startTime;
+        uint256 endTime;
+        uint quality;
+        uint participants;
     }
 
     Meeting[] meetings;
@@ -153,81 +148,21 @@ contract MeetingContract {
     Server[] servers;
     MeetingOffer[] meetingOffers;
     mapping(address => bool) public potentialServers;
-<<<<<<< HEAD
-    uint16 registrationCost = 10000;
-=======
-    uint256 registrationCost = 10000;
->>>>>>> master
-
-    modifier serverOnly() {
         require(potentialServers[msg.sender] == true);
-        _;
     }
 
-<<<<<<< HEAD
-    function registerServer(string url, uint8[] ports) public payable {
-=======
     function registerServer(string url, uint256 port) public payable {
->>>>>>> master
         require(msg.value > registrationCost);
 
         Server memory potentialServer = Server ({
             recipient: msg.sender,
             url: url,
-<<<<<<< HEAD
-            ports: ports
-=======
             port: port
->>>>>>> master
         });
 
         servers.push(potentialServer);
         potentialServers[msg.sender] = true;
     }
-<<<<<<< HEAD
-
-    function offerMeeting(uint availableFrom, uint availableTo, uint hourlyCost, uint8 maxConnections) public serverOnly {
-        MeetingOffer memory meetingOffer = MeetingOffer ({
-            serverAddress: msg.sender,
-            availableFrom: availableFrom,
-            availableTo: availableTo,
-            hourlyCost: hourlyCost,
-            maxConnections: maxConnections
-        });
-
-        meetingOffers.push(meetingOffer);
-    }
-
-    function getOffersLength() public view returns (uint) {
-        return meetingOffers.length;
-    }
-
-    function checkCriteria (MeetingOffer offer, uint from, uint availableTo, uint maxCost, uint8 maxConnections) private view returns (bool) {
-        if (offer.hourlyCost < maxCost && offer.maxConnections > maxConnections) {
-            if (offer.availableTo > availableTo && offer.availableFrom < from) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    function listOffers(uint availableFrom, uint availableTo, uint maxCost, uint8 maxConnections) public view returns (address[]) {
-        // only returns address of servers who have created meeting offers that meet the time, cost and connection requirements
-        address[] memory offerAddresses;
-        uint offerIndex = 0;
-        for (uint i = 0; 1 < meetingOffers.length; i++) {
-            MeetingOffer storage meetingOffer = meetingOffers[i];
-            bool available = checkCriteria(meetingOffer, availableFrom, availableTo, maxCost, maxConnections);
-            if (available) {
-                offerAddresses[offerIndex] = meetingOffer.serverAddress;
-                offerIndex++;
-            }
-        }
-        return offerAddresses;
-    }
-
-    // requestMeeting
-=======
 
     function offerMeeting(uint256 availableFrom, uint256 availableTo, uint256 hourlyCost, uint256 maxConnections) public serverOnly {
         MeetingOffer memory meetingOffer = MeetingOffer ({
@@ -266,7 +201,24 @@ contract MeetingContract {
         }
     }
 
->>>>>>> master
+    function RequestMeeting(uint256 startTime, uint256 endTIme, uint256 quality, uint256 participants) internal{
+        MeetingRequest memory request = MeetingRequest ({ 
+            startTime: startTime,
+            endTime: endTime,
+            quality: quality,
+            participants: participants
+        });
+        meetingRequests.push(request);
+        matchOffer; 
+        // this is where the offer would be accepted and commms established between the two participants. 
+        // check if there is an offer meeting that request 
+        //getOffersLength() will return
+        // iterate from 0-length until 
+        //checkCriteria returns true
+    
+
+        }
+       
     // acceptMeeting
     // startMeeting
     // stopMeeting
