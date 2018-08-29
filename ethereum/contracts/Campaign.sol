@@ -99,117 +99,203 @@ contract Campaign {
 
 contract MeetingContract {
     struct Meeting {
-        string title;                       // title of meeting
-        string description;                 // description of meeting
-        string start;                       // start day and time
-        string end;                         // end day and time
-        string status;                      // current status (pending, active, ended)
-        address host;                       // host ether address
-        address server;                     // server ether address
+        uint256 meetingId;                  // integer representing the meetingId
+        bytes32 name;                       // title of meeting
+        uint256 startTime;                       // start day and time
+        uint256 endTime;                         // end day and time
+        uint256 status;                      // current status (pending=0, active=1, ended=2, failed=3)
+        address host;                       // host ether address - MAYBE REPLACE THIS WITH MEETINGHOSTS
+        address server;                     // server ether address - MAYBE REPLACE THIS WITH MEETINGSERVERS
         uint256 quality;                      // 180p, 240p, 360p, 480p, 720p, 960p, 1080p, 2160p
         uint256 maxParticipants;              // maximum number of participants
-        bool successful;                    // did meeting fail or was it successful
         string url;                         // url of the host - could use ENS name service
         bool invitationOnly;                // are only users with ethereum addresses - and were invited - are allowed access
-        string hashedPassword;              // if meeting is authenticated, need password, 
+        bytes32 password;              // if meeting is authenticated, need password
         // use keccak256 to make sure password matches what was hashed off-chain
-        mapping(address => bool) active;    // is the user active in the meeting
-        mapping(address => bool) participant; // is this address a participant
+        mapping(address => bool) participants; // is this address a participant
     }
 
     struct Server {
         address recipient;      // address of the server, where funds will be sent for successful meeting
-        string url;             // url where meetings will he held - could be ip address and port
-        uint256 port;          // possibly just port range
     }
 
     struct Client {
         address clientAddress;  // ethereum client address (possibly optional)
-        string name;            // whatever name a client wants to use to display
+        bytes32 name;            // whatever name a client wants to use to display
     }
 
     struct MeetingOffer {
-        address serverAddress;      // recipient address of the server making this offer
+        address serverAddress;      // recipient address of the server making this offer - IS THIS STILL NEEDED?
+        string url;                 // url where meetings will he held - could be ip address and port
         uint256 availableFrom;         // time server is available from
         uint256 availableTo;           // time server is available to
         uint256 hourlyCost;            // hourly cost a server is willing to accept
         uint256 maxConnections;       // rough estimate of maximum number of meeting connections a server can provide
     }
 
-      struct MeetingRequest{
+    struct MeetingRequest {
+        bytes32 name;
+        address host;
         uint256 startTime;
         uint256 endTime;
-        uint quality;
-        uint participants;
+        uint256 quality;
+        uint256 maxCost;
+        uint256 participants;
+        bool invitationOnly;
+        bytes32 password;
     }
 
-    Meeting[] meetings;
-    Client[] clients;
-    Server[] servers;
-    MeetingOffer[] meetingOffers;
-    mapping(address => bool) public potentialServers;
+    uint256 registrationCost = 100000;
+    uint256 numHosts = 0;
+    uint256 numServers = 0;
+    uint256 numOffers = 0;
+    uint256 numMeetings = 0;
+
+    mapping(uint256 => Server) public servers; // mapping list of servers
+    mapping(address => bool) public potentialServers; // mapping server address => whether an address is registered as a server
+
+    mapping(uint256 => Meeting) public meetings; // mapping list of meetings 1:1
+
+
+    mapping(uint256 => address) public serverOffers; // mapping meetingOfferId => server address
+    mapping(address => MeetingOffer) public meetingOffers; // server => meetingOffer (only 1 allowed per server)
+
+    mapping(uint256 => address) public meetingHosts; // mapping of meetingIds to host address 1:1
+    mapping(uint256 => address) public meetingServers; // mapping of meetingIds to server address 1:1
+
+
+    // Restricted to servers that have registered
+    modifier serverOnly() {
         require(potentialServers[msg.sender] == true);
+        _;
     }
 
-    function registerServer(string url, uint256 port) public payable {
-        require(msg.value > registrationCost);
+    // Only the server who is serving this particular meeting can modify
+    modifier meetingServerOnly(uint256 meetingId) {
+        require(msg.sender == meetingServers[meetingId]);
+        _;
+    }
 
+    // Only the host who has scheduled this meeting can modify
+    modifier meetingHostOnly(uint256 meetingId) {
+        require(msg.sender == meetingHosts[meetingId]);
+        _;
+    }
+
+    // Only the server that has offered this meeting can modify
+    modifier offerServerOnly(uint256 meetingId) {
+        require(meetingOffers[msg.sender].serverAddress == meetingServers[meetingId]);
+        _;
+    }
+
+    modifier includesRegistrationFee() {
+        require(msg.value > registrationCost);
+        _;
+    }
+
+    modifier includesPayment(uint256 maxCost) {
+        require(msg.value > maxCost);
+        _;
+    }
+    
+    function registerServer() public payable includesRegistrationFee returns (uint256 serverId) {
+        // Increment the serverId, and return it
+        numServers++;
         Server memory potentialServer = Server ({
-            recipient: msg.sender,
-            url: url,
-            port: port
+            recipient: msg.sender
         });
 
-        servers.push(potentialServer);
+        servers[numServers] = potentialServer;
         potentialServers[msg.sender] = true;
+        return numServers;
     }
 
-    function offerMeeting(uint256 availableFrom, uint256 availableTo, uint256 hourlyCost, uint256 maxConnections) public serverOnly {
+    function offerMeeting(string url, uint256 availableFrom, uint256 availableTo, uint256 hourlyCost, uint256 maxConnections)
+        public serverOnly returns (uint256) {
+        // Increment the number of offers and return it
+        numOffers++;
         MeetingOffer memory meetingOffer = MeetingOffer ({
             serverAddress: msg.sender,
+            url: url,
             availableFrom: availableFrom,
             availableTo: availableTo,
             hourlyCost: hourlyCost,
             maxConnections: maxConnections
         });
-
-        meetingOffers.push(meetingOffer);
+        serverOffers[numOffers] = meetingOffer.serverAddress;
+        meetingOffers[msg.sender] = meetingOffer;
     }
 
-    function getOffersLength() public view returns (uint256) {
-        return meetingOffers.length;
-    }
+    // function getOffersLength() public pure returns (uint256) {
+    //    return numOffers;
+    // }
 
-    function checkCriteria (MeetingOffer offer, uint256 from, uint256 availableTo, uint256 maxCost, uint256 maxConnections) private pure returns (bool) {
+    function checkCriteria (MeetingOffer offer, uint256 from, uint256 availableTo, uint256 maxCost, uint256 maxConnections) 
+        private pure returns (bool) {
         if (offer.hourlyCost < maxCost && offer.maxConnections > maxConnections) {
             if (offer.availableTo > availableTo && offer.availableFrom < from) {
+                // Need to also check whether someone else has a booked meeting that overlaps with this time
                 return true;
             }
         }
         return false;
     }
     
-    function matchOffer(uint256 startTime, uint256 endTime, uint256 maxCost, uint256 maxConnections) public view returns (address) {
+    function matchOffer(uint256 startTime, uint256 endTime, uint256 maxCost, uint256 quality, uint256 maxConnections) 
+        internal view returns (uint256) {
         // only returns first address of a server that has created a meeting offer that fulfills the time, cost and connection requirements
-        for (uint256 i = 0; 1 < meetingOffers.length; i++) {
-            MeetingOffer storage meetingOffer = meetingOffers[i];
+        for (uint256 i = 0; i < numOffers; i++) {
+            MeetingOffer memory meetingOffer = meetingOffers[serverOffers[i]];
             bool available = checkCriteria(meetingOffer, startTime, endTime, maxCost, maxConnections);
-            if (available) {
-                return meetingOffer.serverAddress;
-                // Note: only returns if a server meets the criteria
+            if (available == true) {
+                return i;
+                // Note: only returns if a server's meetingOffer meets the criteria
+                // MAYBE WE CREATE A NEW CONTRACT FOR A SCHEDULED MEETING HERE
             }
         }
     }
 
-    function RequestMeeting(uint256 startTime, uint256 endTIme, uint256 quality, uint256 participants) internal{
-        MeetingRequest memory request = MeetingRequest ({ 
-            startTime: startTime,
-            endTime: endTime,
-            quality: quality,
-            participants: participants
-        });
-        meetingRequests.push(request);
-        matchOffer; 
+    function requestMeeting(
+        bytes32 name,
+        uint256 startTime,
+        uint256 endTime,
+        uint256 quality,
+        uint256 maxCost,
+        uint256 participants,
+        bool invitationOnly,
+        bytes32 password)
+        public
+        includesPayment(maxCost)
+        payable
+        returns (uint256) {
+        
+        uint256 offerId = matchOffer(startTime, endTime, maxCost, quality, participants);
+        
+        if (offerId > 0) {
+            MeetingOffer memory meetingOffer = meetingOffers[serverOffers[offerId]];
+            numMeetings++;
+            Meeting memory newMeeting = Meeting({
+                meetingId: numMeetings,
+                name: name,
+                startTime: startTime,
+                endTime: endTime,
+                status: 0,
+                host: msg.sender,
+                server: meetingOffer.serverAddress,
+                quality: quality,
+                maxParticipants: participants,
+                url: meetingOffer.url,
+                invitationOnly: invitationOnly,
+                password: password
+                // Note: not including participants mapped to meeting yet
+            });
+
+            meetings[numMeetings] = newMeeting;
+            meetingHosts[numMeetings] = newMeeting.host;
+            meetingServers[numMeetings] = newMeeting.server;
+            return numMeetings;
+
+        }
         // this is where the offer would be accepted and commms established between the two participants. 
         // check if there is an offer meeting that request 
         //getOffersLength() will return
@@ -217,7 +303,7 @@ contract MeetingContract {
         //checkCriteria returns true
     
 
-        }
+    }
        
     // acceptMeeting
     // startMeeting
@@ -233,3 +319,4 @@ contract MeetingContract {
     // refundHost - refund if host does not run meeting, or meeting ended < 90% complete
     // split difference between contract and server if meeting takes less than scheduled time 
     // is less than 10% of scheduled time - otherwise refund host meeting fee minus cost to schedule
+}
