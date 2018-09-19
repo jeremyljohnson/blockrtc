@@ -1,102 +1,5 @@
 pragma solidity ^0.4.17;
 
-contract CampaignFactory {
-    address[] public deployedCampaigns;
-    
-    function createCampaign(uint minimum) public {
-        address newCampaign = new Campaign(minimum, msg.sender);
-        deployedCampaigns.push(newCampaign);
-    }
-    
-    function getDeployedCampaigns() public view returns (address[]) {
-        return deployedCampaigns;
-    }
-}
-
-contract Campaign {
-    struct Request {
-        string description;
-        uint value;
-        address recipient;
-        bool complete;
-        uint approvalCount;
-        mapping(address => bool) approvals;
-    }
-    
-    Request[] public requests;
-    address public manager;
-    uint public minimumContribution;
-    mapping(address => bool) public approvers;
-    uint public approversCount;
-    
-    modifier restricted() {
-        require(msg.sender == manager);
-        _;
-    }
-    
-    constructor(uint minimum, address creator) public {
-        manager = creator;
-        minimumContribution = minimum;
-    }
-    
-    function contribute() public payable {
-        require(msg.value > minimumContribution);
-        // example of mapping - note that we can't iterate through addresses
-        approvers[msg.sender] = true;
-        approversCount++;
-    }
-    
-    function createRequest(string description, uint value, address recipient) public restricted {
-        Request memory newRequest = Request({
-            description: description,
-            value: value,
-            recipient: recipient,
-            complete: false,
-            approvalCount: 0
-            // only have to initialize value types; mapping is a reference type
-        });
-        
-        requests.push(newRequest);
-    }
-    
-    function approveRequest(uint index) public {
-        Request storage request = requests[index];
-        
-        require(approvers[msg.sender]);
-        require(!request.approvals[msg.sender]);
-        
-        request.approvals[msg.sender] = true;
-        request.approvalCount++;
-    }
-    
-    function finalizeRequest(uint index) public restricted {
-        Request storage request = requests[index];
-        
-        require(!request.complete);
-        require(request.approvalCount > (approversCount / 2));
-        
-        request.recipient.transfer(request.value);
-        request.complete = true;
-        
-    }
-
-    function getSummary() public view returns (
-        uint, uint, uint, uint, address
-    ) {
-        return (
-            minimumContribution,
-            this.balance,
-            requests.length,
-            approversCount,
-            manager
-        );
-    }
-
-    function getRequestsCount() public view returns (uint) {
-        return requests.length;
-    }
-}
-
 contract MeetingContract {
     struct Meeting {
         uint256 meetingId;                  // integer representing the meetingId
@@ -145,6 +48,12 @@ contract MeetingContract {
         bytes32 password;
     }
 
+    // so we can return the server id and offer id
+    struct OfferId {
+        uint256 server;
+        uint256 offer;
+    }
+
     uint256 registrationCost = 100000;
     uint256 numHosts = 0;
     uint256 numServers = 0;
@@ -158,7 +67,7 @@ contract MeetingContract {
 
 
     mapping(uint256 => address) public serverOffers; // mapping meetingOfferId => server address
-    mapping(address => MeetingOffer) public meetingOffers; // server => meetingOffer (only 1 allowed per server)
+    mapping(address => MeetingOffer[]) public meetingOffers; // server => meetingOffer (multiple allowed per server)
 
     mapping(uint256 => address) public meetingHosts; // mapping of meetingIds to host address 1:1
     mapping(uint256 => address) public meetingServers; // mapping of meetingIds to server address 1:1
@@ -184,17 +93,19 @@ contract MeetingContract {
 
     // Only the server that has offered this meeting can modify
     modifier offerServerOnly(uint256 meetingId) {
-        require(meetingOffers[msg.sender].serverAddress == meetingServers[meetingId]);
+        require(meetingOffers[msg.sender][0].serverAddress == meetingServers[meetingId]);
         _;
     }
 
+    // Ensure server is paying the reg fee 
     modifier includesRegistrationFee() {
-        require(msg.value > registrationCost);
+        require(msg.value >= registrationCost);
         _;
     }
 
+    // ensure host pre-paid meeting cost
     modifier includesPayment(uint256 maxCost) {
-        require(msg.value > maxCost);
+        require(msg.value >= maxCost);
         _;
     }
     
@@ -222,8 +133,23 @@ contract MeetingContract {
             hourlyCost: hourlyCost,
             maxConnections: maxConnections
         });
+        // this is now an array - need to account for that
         serverOffers[numOffers] = meetingOffer.serverAddress;
-        meetingOffers[msg.sender] = meetingOffer;
+        meetingOffers[msg.sender].push(meetingOffer);
+    }
+
+    function reserveOffer(OfferId offerId, uint256 startTime, uint256 endTime) internal {
+        MeetingOffer memory meetingOffer = meetingOffers[serverOffers[offerId.server]][offerId.offer];
+        if (meetingOffer.availableFrom == startTime && meetingOffer.availableTo == endTime) {
+            // if the reservation exactly matches the available time, then delete it
+            // in the future, this should delete it if there is less than 30 min before or 30 min after reservation remaining in offer
+            delete meetingOffers[serverOffers[offerId.server]][offerId.offer];
+        }
+        else if (meetingOffer.availableFrom > (startTime+(30*60*1000)) && meetingOffer.availableTo == endTime) {
+            // create a new meetingOffer for time up to new reservation
+        }
+        // add meetingOffer after reservation
+        // or add meetingOffers before AND after reservations
     }
 
     // function getOffersLength() public pure returns (uint256) {
@@ -232,8 +158,8 @@ contract MeetingContract {
 
     function checkCriteria (MeetingOffer offer, uint256 from, uint256 availableTo, uint256 maxCost, uint256 maxConnections) 
         private pure returns (bool) {
-        if (offer.hourlyCost < maxCost && offer.maxConnections > maxConnections) {
-            if (offer.availableTo > availableTo && offer.availableFrom < from) {
+        if (offer.hourlyCost <= maxCost && offer.maxConnections >= maxConnections) {
+            if (offer.availableTo >= availableTo && offer.availableFrom <= from) {
                 // Need to also check whether someone else has a booked meeting that overlaps with this time
                 return true;
             }
@@ -242,15 +168,22 @@ contract MeetingContract {
     }
     
     function matchOffer(uint256 startTime, uint256 endTime, uint256 maxCost, uint256 quality, uint256 maxConnections) 
-        internal view returns (uint256) {
+        internal view returns (OfferId) {
         // only returns first address of a server that has created a meeting offer that fulfills the time, cost and connection requirements
-        for (uint256 i = 0; i < numOffers; i++) {
-            MeetingOffer memory meetingOffer = meetingOffers[serverOffers[i]];
-            bool available = checkCriteria(meetingOffer, startTime, endTime, maxCost, maxConnections);
-            if (available == true) {
-                return i;
-                // Note: only returns if a server's meetingOffer meets the criteria
-                // MAYBE WE CREATE A NEW CONTRACT FOR A SCHEDULED MEETING HERE
+        for (uint256 i = 1; i <= numOffers; i++) {
+            MeetingOffer[] memory meetingOfferList = meetingOffers[serverOffers[i]];
+            for (uint256 n = 0; n <= meetingOfferList.length; n++) {
+                MeetingOffer memory meetingOffer = meetingOfferList[n];
+                bool available = checkCriteria(meetingOffer, startTime, endTime, maxCost, maxConnections);
+                if (available == true) {
+                    OfferId memory offerId = OfferId ({
+                        server: i,
+                        offer: n
+                    });
+                    return offerId;
+                    // Note: only returns if a server's meetingOffer meets the criteria
+                    // MAYBE WE CREATE A NEW CONTRACT FOR A SCHEDULED MEETING HERE
+                }
             }
         }
     }
@@ -269,10 +202,10 @@ contract MeetingContract {
         payable
         returns (uint256) {
         
-        uint256 offerId = matchOffer(startTime, endTime, maxCost, quality, participants);
+        OfferId memory offerId = matchOffer(startTime, endTime, maxCost, quality, participants);
         
-        if (offerId > 0) {
-            MeetingOffer memory meetingOffer = meetingOffers[serverOffers[offerId]];
+        if (offerId.server > 0 && offerId.offer > 0) {
+            MeetingOffer memory meetingOffer = meetingOffers[serverOffers[offerId.server]][offerId.offer];
             numMeetings++;
             Meeting memory newMeeting = Meeting({
                 meetingId: numMeetings,
@@ -290,10 +223,15 @@ contract MeetingContract {
                 // Note: not including participants mapped to meeting yet
             });
 
-            meetings[numMeetings] = newMeeting;
-            meetingHosts[numMeetings] = newMeeting.host;
-            meetingServers[numMeetings] = newMeeting.server;
-            return numMeetings;
+            meetings[numMeetings] = newMeeting;             // may be able to remove this from the meeting struct
+            meetingHosts[numMeetings] = newMeeting.host;    // may be able to remove this from the meeting struct
+            meetingServers[numMeetings] = newMeeting.server;// may be able to remove this from the meeting struct
+
+            reserveOffer(offerId, newMeeting.startTime, newMeeting.endTime);
+
+            // Then emit an event with the newly created newMeeting
+
+            return newMeeting.meetingId;
 
         }
         // this is where the offer would be accepted and commms established between the two participants. 
@@ -304,13 +242,15 @@ contract MeetingContract {
     
 
     }
-       
-    // acceptMeeting
-    // startMeeting
-    // stopMeeting
-    // pauseMeeting
-    // joinMeeting
-    // reviewMeeting - Uber-style star rating
+
+    // emit an event to notify server they have a scheduled meeting
+    // put the funds for a meeting into the contract escrow account
+    // allocate server resource for meeting
+
+    // startMeeting - allow all participants to join the live video call
+    // endMeeting - kick all participants out of the meeting, and remove from meetings list?
+    // joinMeeting - as a participant, need to join the live video call
+    // reviewMeeting - Uber-style star rating?
 
     // checkPassword
     // estimateMaxLength - estimates maximum length of a meeting based on funds in user wallet
