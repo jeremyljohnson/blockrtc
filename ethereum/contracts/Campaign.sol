@@ -1,6 +1,14 @@
-pragma solidity ^0.4.17;
+pragma solidity ^0.4.21;
 
 contract MeetingContract {
+
+
+    event Matched (
+       uint256 meetingId,
+       address host,
+       address server
+    );
+
     struct Meeting {
         uint256 meetingId;                  // integer representing the meetingId
         bytes32 name;                       // title of meeting
@@ -33,6 +41,7 @@ contract MeetingContract {
         uint256 availableFrom;         // time server is available from
         uint256 availableTo;           // time server is available to
         uint256 hourlyCost;            // hourly cost a server is willing to accept
+        uint256 quality;
         uint256 maxConnections;       // rough estimate of maximum number of meeting connections a server can provide
     }
 
@@ -54,7 +63,7 @@ contract MeetingContract {
         uint256 offer;
     }
 
-    uint256 registrationCost = 100000;
+    uint256 registrationCost = 10000;
     uint256 numHosts = 0;
     uint256 numServers = 0;
     uint256 numOffers = 0;
@@ -109,7 +118,7 @@ contract MeetingContract {
         _;
     }
     
-    function registerServer() public payable includesRegistrationFee returns (uint256 serverId) {
+    function registerServer() public payable includesRegistrationFee returns (uint256 serverId, amount) {
         // Increment the serverId, and return it
         numServers++;
         Server memory potentialServer = Server ({
@@ -121,7 +130,7 @@ contract MeetingContract {
         return numServers;
     }
 
-    function offerMeeting(string url, uint256 availableFrom, uint256 availableTo, uint256 hourlyCost, uint256 maxConnections)
+    function offerMeeting(string url, uint256 availableFrom, uint256 availableTo, uint256 hourlyCost, uint256 quality, uint256 maxConnections)
         public serverOnly returns (uint256) {
         // Increment the number of offers and return it
         numOffers++;
@@ -131,6 +140,7 @@ contract MeetingContract {
             availableFrom: availableFrom,
             availableTo: availableTo,
             hourlyCost: hourlyCost,
+            quality: quality,
             maxConnections: maxConnections
         });
         // this is now an array - need to account for that
@@ -156,12 +166,14 @@ contract MeetingContract {
     //    return numOffers;
     // }
 
-    function checkCriteria (MeetingOffer offer, uint256 from, uint256 availableTo, uint256 maxCost, uint256 maxConnections) 
+    function checkCriteria (MeetingOffer offer, uint256 from, uint256 availableTo, uint256 maxCost, uint256 quality, uint256 maxConnections) 
         private pure returns (bool) {
         if (offer.hourlyCost <= maxCost && offer.maxConnections >= maxConnections) {
             if (offer.availableTo >= availableTo && offer.availableFrom <= from) {
                 // Need to also check whether someone else has a booked meeting that overlaps with this time
-                return true;
+                if (offer.quality >= quality) {
+                    return true;
+                }
             }
         }
         return false;
@@ -174,7 +186,7 @@ contract MeetingContract {
             MeetingOffer[] memory meetingOfferList = meetingOffers[serverOffers[i]];
             for (uint256 n = 0; n <= meetingOfferList.length; n++) {
                 MeetingOffer memory meetingOffer = meetingOfferList[n];
-                bool available = checkCriteria(meetingOffer, startTime, endTime, maxCost, maxConnections);
+                bool available = checkCriteria(meetingOffer, startTime, endTime, maxCost, quality, maxConnections);
                 if (available == true) {
                     OfferId memory offerId = OfferId ({
                         server: i,
@@ -228,35 +240,21 @@ contract MeetingContract {
             meetingServers[numMeetings] = newMeeting.server;// may be able to remove this from the meeting struct
 
             reserveOffer(offerId, newMeeting.startTime, newMeeting.endTime);
-
-            // Then emit an event with the newly created newMeeting
-
+            emit Matched(newMeeting.meetingId, newMeeting.host, newMeeting.server);
             return newMeeting.meetingId;
-
         }
-        // this is where the offer would be accepted and commms established between the two participants. 
-        // check if there is an offer meeting that request 
-        //getOffersLength() will return
-        // iterate from 0-length until 
-        //checkCriteria returns true
-    
-
     }
-
-    // emit an event to notify server they have a scheduled meeting
-    // put the funds for a meeting into the contract escrow account
-    // allocate server resource for meeting
-
-    // startMeeting - allow all participants to join the live video call
-    // endMeeting - kick all participants out of the meeting, and remove from meetings list?
-    // joinMeeting - as a participant, need to join the live video call
-    // reviewMeeting - Uber-style star rating?
-
-    // checkPassword
-    // estimateMaxLength - estimates maximum length of a meeting based on funds in user wallet
-    // payDownPayment - pay downpayment for 50% of meeting fee
-    // payServer - pay server fee for hosting meeting at end of meeting
-    // refundHost - refund if host does not run meeting, or meeting ended < 90% complete
-    // split difference between contract and server if meeting takes less than scheduled time 
-    // is less than 10% of scheduled time - otherwise refund host meeting fee minus cost to schedule
 }
+
+    // 0. finish reserveOffer to create new meetingOffers if part of one is booked by a new request
+    // 1. startMeeting - allow all participants to join the live video call
+    // 2. endMeeting - kick all participants out of the meeting, and remove from meetings list?
+    // 3. joinMeeting - as a participant, need to join the live video call
+    // 4. payServer - pay server fee for hosting meeting at end of meeting
+    // 5. refundHost - refund if host does not run meeting, or meeting ended < 90% complete
+    // 6. checkPassword
+    // 7. estimateMaxLength - estimates maximum length of a meeting based on funds in user wallet
+    // 8. split difference between contract and server if meeting takes less than scheduled time 
+    // 9. is less than 10% of scheduled time - otherwise refund host meeting fee minus cost to schedule
+    // 10. reviewMeeting - Uber-style star rating?
+    
