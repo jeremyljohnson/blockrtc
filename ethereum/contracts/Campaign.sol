@@ -118,7 +118,7 @@ contract MeetingContract {
         _;
     }
     
-    function registerServer() public payable includesRegistrationFee returns (uint256 serverId, amount) {
+    function registerServer() public payable includesRegistrationFee returns (uint256 serverId) {
         // Increment the serverId, and return it
         numServers++;
         Server memory potentialServer = Server ({
